@@ -1,4 +1,4 @@
-name: Build and Deploy G2Chis
+name: Build and Deploy G2Plat
 
 on:
   workflow_dispatch:
@@ -13,19 +13,19 @@ on:
         default: prod-merge
         type: string
       binary_name:
-        description: Binary filename override. Leave empty to use G2Chis.
+        description: Binary filename override. Leave empty to use G2Plat.
         required: false
         type: string
       deploy_path:
-        description: Absolute deployment path override. Leave empty to use the default G2Chis path.
+        description: Absolute deployment path override. Leave empty to use the default G2Plat path.
         required: false
         type: string
       backup_dir:
-        description: Absolute backup directory override. Leave empty to use the default G2Chis backup directory.
+        description: Absolute backup directory override. Leave empty to use the default G2Plat backup directory.
         required: false
         type: string
       supervisor_target:
-        description: supervisorctl target override. Leave empty to use CHIS:.
+        description: supervisorctl target override. Leave empty to use PLAT:.
         required: false
         type: string
       build_path:
@@ -68,22 +68,22 @@ jobs:
           set -e
           BINARY_NAME="$INPUT_BINARY_NAME"
           if [ -z "$BINARY_NAME" ]; then
-            BINARY_NAME="G2Chis"
+            BINARY_NAME="G2Plat"
           fi
 
           DEPLOY_PATH="$INPUT_DEPLOY_PATH"
           if [ -z "$DEPLOY_PATH" ]; then
-            DEPLOY_PATH="/storage/sites/G2/G2Chis"
+            DEPLOY_PATH="/storage/sites/G2/G2Plat"
           fi
 
           BACKUP_DIR="$INPUT_BACKUP_DIR"
           if [ -z "$BACKUP_DIR" ]; then
-            BACKUP_DIR="/storage/sites/G2/G2Chis_old"
+            BACKUP_DIR="/storage/sites/G2/G2Plat_old"
           fi
 
           SUPERVISOR_TARGET="$INPUT_SUPERVISOR_TARGET"
           if [ -z "$SUPERVISOR_TARGET" ]; then
-            SUPERVISOR_TARGET="CHIS:"
+            SUPERVISOR_TARGET="PLAT:"
           fi
 
           TEMP_PATH="/tmp/${BINARY_NAME}_${{ github.run_id }}"
