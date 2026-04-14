@@ -15,15 +15,6 @@ jobs:
     runs-on: self-hosted
     
     steps:
-      - name: Cache GitLab source
-        id: cache-gitlab-source
-        uses: actions/cache@v4
-        with:
-          path: source
-          key: gitlab-source-${{ runner.os }}-${{ github.run_id }}
-          restore-keys: |
-            gitlab-source-${{ runner.os }}-
-
       - name: Clone or pull from GitLab
         run: |
           if [ -d "source/.git" ]; then
@@ -59,27 +50,18 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Cache node_modules
-        id: cache-node-modules
-        uses: actions/cache@v4
-        with:
-          path: source/node_modules
-          key: node-modules-${{ runner.os }}-${{ hashFiles('source/package.json') }}
-          restore-keys: |
-            node-modules-${{ runner.os }}-
-
       - name: Install dependencies
-        if: steps.cache-node-modules.outputs.cache-hit != 'true'
         working-directory: ./source
-        run: npm install --legacy-peer-deps
-
-      - name: Cache webpack filesystem cache
-        uses: actions/cache@v4
-        with:
-          path: source/webpack-cache
-          key: webpack-cache-${{ runner.os }}-${{ hashFiles('source/webpack.*.config.js', 'source/package.json') }}
-          restore-keys: |
-            webpack-cache-${{ runner.os }}-
+        run: |
+          CURRENT_HASH=$(md5sum package.json | cut -d' ' -f1)
+          CACHED_HASH=$(cat .pkg_hash 2>/dev/null || echo "")
+          if [ "$CURRENT_HASH" != "$CACHED_HASH" ] || [ ! -d "node_modules" ]; then
+            echo "Dependencies changed or missing, running npm install..."
+            npm install --legacy-peer-deps
+            echo "$CURRENT_HASH" > .pkg_hash
+          else
+            echo "node_modules cache hit, skipping install."
+          fi
 
       - name: Build project
         working-directory: ./source
