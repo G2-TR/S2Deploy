@@ -123,9 +123,6 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version-file: source/go.mod
-          cache-dependency-path: |
-            source/go.sum
-            source/go.work.sum
 
       - name: Install UPX
         uses: crazy-max/ghaction-upx@v4
