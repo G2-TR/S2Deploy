@@ -39,8 +39,10 @@ jobs:
 
       - name: Setup sshpass
         run: |
-          sudo apt-get update
-          sudo apt-get install -y sshpass
+          if ! command -v sshpass &> /dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y sshpass
+          fi
           mkdir -p ~/.ssh
           ssh-keyscan -p ${{ secrets.WORK_SERVER_PORT }} ${{ secrets.WORK_SERVER_HOST }} >> ~/.ssh/known_hosts
 
