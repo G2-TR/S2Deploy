@@ -31,7 +31,7 @@ jobs:
             cd source
             git remote set-url origin ${{ secrets.MAIN_SERVER_REPO }}
             git fetch --depth 1 origin master
-            git reset --hard origin/master
+            git reset --hard FETCH_HEAD
           else
             echo "No cache found, cloning repository..."
             git clone --depth 1 --branch master --single-branch ${{ secrets.MAIN_SERVER_REPO }} source
