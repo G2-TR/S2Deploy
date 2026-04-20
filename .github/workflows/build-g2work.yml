@@ -54,7 +54,9 @@ permissions:
 
 jobs:
   build:
-    runs-on: self-hosted
+    runs-on:
+      - self-hosted
+      - macOS
 
     steps:
       - name: Resolve deployment settings
@@ -118,6 +120,16 @@ jobs:
           git clone --depth 1 --branch "${{ inputs.source_branch }}" --single-branch "${{ steps.repo.outputs.repository_url }}" source
           test -f source/go.mod
 
+      - name: Add Homebrew to PATH
+        if: runner.os == 'macOS'
+        run: |
+          if [ -d /opt/homebrew/bin ]; then
+            echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
+          fi
+          if [ -d /usr/local/bin ]; then
+            echo "/usr/local/bin" >> "$GITHUB_PATH"
+          fi
+
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
@@ -126,10 +138,38 @@ jobs:
             source/go.sum
             source/go.work.sum
 
-      - name: Install UPX
-        uses: crazy-max/ghaction-upx@v4
-        with:
-          install-only: true
+      - name: Setup UPX
+        run: |
+          set -e
+          if command -v upx > /dev/null 2>&1; then
+            upx --version
+            exit 0
+          fi
+
+          case "$(uname -s)" in
+            Linux)
+              if command -v apt-get > /dev/null 2>&1; then
+                sudo apt-get update
+                sudo apt-get install -y upx-ucl || sudo apt-get install -y upx
+              else
+                echo "UPX is not installed and no supported Linux package manager was found."
+                exit 1
+              fi
+              ;;
+            Darwin)
+              if ! command -v brew > /dev/null 2>&1; then
+                echo "Homebrew is required to install UPX on a macOS self-hosted runner."
+                exit 1
+              fi
+              HOMEBREW_NO_AUTO_UPDATE=1 brew install upx
+              ;;
+            *)
+              echo "Unsupported runner OS: $(uname -s)"
+              exit 1
+              ;;
+          esac
+
+          upx --version
 
       - name: Build binary
         working-directory: ./source
@@ -160,14 +200,35 @@ jobs:
           path: dist/${{ steps.settings.outputs.binary_name }}
           retention-days: 7
 
-      - name: Setup sshpass
+      - name: Setup SSH tooling
         run: |
           set -e
-          if ! command -v sshpass &> /dev/null; then
-            sudo apt-get update
-            sudo apt-get install -y sshpass
+          if ! command -v sshpass > /dev/null 2>&1; then
+            case "$(uname -s)" in
+              Linux)
+                if command -v apt-get > /dev/null 2>&1; then
+                  sudo apt-get update
+                  sudo apt-get install -y sshpass
+                else
+                  echo "sshpass is not installed and no supported Linux package manager was found."
+                  exit 1
+                fi
+                ;;
+              Darwin)
+                if ! command -v brew > /dev/null 2>&1; then
+                  echo "Homebrew is required to install sshpass on a macOS self-hosted runner."
+                  exit 1
+                fi
+                HOMEBREW_NO_AUTO_UPDATE=1 brew install hudochenkov/sshpass/sshpass
+                ;;
+              *)
+                echo "Unsupported runner OS: $(uname -s)"
+                exit 1
+                ;;
+            esac
           fi
           mkdir -p ~/.ssh
+          touch ~/.ssh/known_hosts
           ssh-keyscan -p ${{ secrets.MAIN_SERVER_PORT }} ${{ secrets.MAIN_SERVER_HOST }} >> ~/.ssh/known_hosts
 
       - name: Upload binary to server temp path

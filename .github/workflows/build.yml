@@ -12,7 +12,9 @@ permissions:
 
 jobs:
   build:
-    runs-on: self-hosted
+    runs-on:
+      - self-hosted
+      - macOS
     
     steps:
       - name: Clone or pull from GitLab
@@ -28,13 +30,45 @@ jobs:
             git clone --depth 1 --branch master --single-branch ${{ secrets.MAIN_SERVER_REPO }} source
           fi
 
-      - name: Setup sshpass
+      - name: Add Homebrew to PATH
+        if: runner.os == 'macOS'
         run: |
-          if ! command -v sshpass &> /dev/null; then
-            sudo apt-get update
-            sudo apt-get install -y sshpass
+          if [ -d /opt/homebrew/bin ]; then
+            echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
+          fi
+          if [ -d /usr/local/bin ]; then
+            echo "/usr/local/bin" >> "$GITHUB_PATH"
+          fi
+
+      - name: Setup SSH tooling
+        run: |
+          set -e
+          if ! command -v sshpass > /dev/null 2>&1; then
+            case "$(uname -s)" in
+              Linux)
+                if command -v apt-get > /dev/null 2>&1; then
+                  sudo apt-get update
+                  sudo apt-get install -y sshpass
+                else
+                  echo "sshpass is not installed and no supported Linux package manager was found."
+                  exit 1
+                fi
+                ;;
+              Darwin)
+                if ! command -v brew > /dev/null 2>&1; then
+                  echo "Homebrew is required to install sshpass on a macOS self-hosted runner."
+                  exit 1
+                fi
+                HOMEBREW_NO_AUTO_UPDATE=1 brew install hudochenkov/sshpass/sshpass
+                ;;
+              *)
+                echo "Unsupported runner OS: $(uname -s)"
+                exit 1
+                ;;
+            esac
           fi
           mkdir -p ~/.ssh
+          touch ~/.ssh/known_hosts
           ssh-keyscan -p ${{ secrets.MAIN_SERVER_PORT }} ${{ secrets.MAIN_SERVER_HOST }} >> ~/.ssh/known_hosts
 
       - name: Backup existing Work directory on server
@@ -51,7 +85,7 @@ jobs:
       - name: Install dependencies
         working-directory: ./source
         run: |
-          CURRENT_HASH=$(md5sum package.json | cut -d' ' -f1)
+          CURRENT_HASH=$(shasum -a 256 package.json | awk '{print $1}')
           CACHED_HASH=$(cat .pkg_hash 2>/dev/null || echo "")
           if [ "$CURRENT_HASH" != "$CACHED_HASH" ] || [ ! -d "node_modules" ]; then
             echo "Dependencies changed or missing, running npm install..."
