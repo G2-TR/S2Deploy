@@ -197,13 +197,6 @@ jobs:
           fi
           ls -lh "dist/${BINARY_NAME}"
 
-      - name: Upload binary artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ steps.settings.outputs.binary_name }}
-          path: dist/${{ steps.settings.outputs.binary_name }}
-          retention-days: 7
-
       - name: Setup SSH tooling
         run: |
           set -e
