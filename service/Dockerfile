@@ -1,9 +1,11 @@
-FROM golang:1.26-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY *.go ./
-RUN CGO_ENABLED=0 go build -trimpath -o /out/deploy-service .
+RUN go test ./...
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -trimpath -o /out/deploy-service .
 
 FROM alpine:3.23
 RUN apk add --no-cache ca-certificates tzdata && addgroup -S deploy && adduser -S -G deploy deploy && mkdir -p /var/lib/s2work-deploy && chown deploy:deploy /var/lib/s2work-deploy

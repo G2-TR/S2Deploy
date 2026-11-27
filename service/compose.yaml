@@ -1,6 +1,6 @@
 services:
   deploy-service:
-    build: .
+    image: ghcr.io/g2-tr/s2deploy:${DEPLOY_IMAGE_TAG:-latest}
     restart: unless-stopped
     env_file: .env
     ports:

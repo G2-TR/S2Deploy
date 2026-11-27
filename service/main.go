@@ -86,7 +86,7 @@ func serve() error {
 	defer db.db.Close()
 	repo := os.Getenv("GITHUB_REPOSITORY")
 	if repo == "" {
-		repo = "hamster1963/S2Work-Deploy"
+		repo = "G2-TR/S2Deploy"
 	}
 	appID, secret := os.Getenv("FEISHU_APP_ID"), os.Getenv("FEISHU_APP_SECRET")
 	chats := map[string]string{"work": os.Getenv("FEISHU_WORK_CHAT_ID"), "g2": os.Getenv("FEISHU_G2_CHAT_ID")}

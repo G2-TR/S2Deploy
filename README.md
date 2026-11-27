@@ -1,4 +1,4 @@
-# S2Work-Deploy
+# S2Deploy
 
 历史 Work 前端和 G2 服务的飞书自动部署。独立 Go 服务接收 GitLab 推送、发送飞书卡片、处理按钮长连接、触发 GitHub Actions，并把进度和最终结果写回飞书。状态保存在本地 bbolt 数据库。GitHub runner 继续从 GitLab 拉取部署时的分支最新代码。
 
@@ -13,19 +13,23 @@
 
 ## 配置和启动
 
-下面的命令从本仓库根目录执行。Compose 适用于 Nginx 和 Docker 位于同一主机的部署方式。
+服务镜像为 `ghcr.io/g2-tr/s2deploy`，支持 Linux amd64 和 arm64。推送 `v*` 版本标签会发布版本号、`latest` 和 `sha-<完整提交号>` 三个镜像标签。也可以在 GitHub Actions 的 **Publish deploy service image** 工作流选择 `main` 手动发布 `latest` 和对应提交的镜像。
+
+在服务器上选一个固定目录保存 Compose 文件和凭据。以下命令用于首次安装，假设 Docker 与 Nginx 在同一台宿主机。
 
 ```sh
-cd service
-cp .env.example .env
-chmod 600 .env
+mkdir -p ~/s2deploy && cd ~/s2deploy
+curl -fsSLo compose.yaml https://raw.githubusercontent.com/G2-TR/S2Deploy/main/service/compose.yaml
+curl -fsSLo .env.example https://raw.githubusercontent.com/G2-TR/S2Deploy/main/service/.env.example
+umask 077
+cp -n .env.example .env
 ```
 
 编辑 `.env` 填入以下值。两个群都需要允许原飞书应用发送消息，并保有原卡片模板和更新卡片的权限。
 
 | 配置 | 用途 |
 | --- | --- |
-| `GITHUB_REPOSITORY` | 工作流仓库，默认 `hamster1963/S2Work-Deploy` |
+| `GITHUB_REPOSITORY` | 工作流仓库，默认 `G2-TR/S2Deploy` |
 | `GITHUB_TOKEN` | 对该仓库有 Actions 读写权限的令牌，用于 dispatch、查询运行及作业 |
 | `GITHUB_WEBHOOK_SECRET` | 与 GitHub 仓库 Webhook 配置相同的签名密钥，订阅 Workflow runs，使用 JSON |
 | `GITLAB_WEBHOOK_TOKEN` | 在历史 Work 和 G2 的 GitLab Push webhook 设置相同的 Secret token |
@@ -34,19 +38,23 @@ chmod 600 .env
 | `FEISHU_VERIFICATION_TOKEN` | 使用原 `LarkWebhook` HTTP 验证地址时填写。部署按钮使用飞书长连接 |
 
 ```sh
-docker compose build
+docker compose pull
 # 完成下一节的旧服务交接后启动
 docker compose up -d
 curl -fsS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8096/healthz
 docker compose logs --tail=80 deploy-service
 ```
 
+若 GHCR 提示没有读取权限，先运行 `docker login ghcr.io -u 你的GitHub用户名`，在密码提示处输入有权读取该包的 classic PAT（`read:packages`）。
+
+日常更新时，在同一目录执行 `docker compose pull && docker compose up -d`。要固定版本或回到先前发布的镜像，在 `.env` 设置 `DEPLOY_IMAGE_TAG` 为对应版本标签或 `sha-<完整提交号>`，再执行同一条命令。
+
 返回 200 表示 HTTP 已监听。一个实例独占一个状态库，容器重建时复用 Compose 命名卷 `deploy-data`。备份时先停止服务，再复制完整数据库。直接运行二进制也可以，在 `service/` 执行 `go build -o deploy-service .`，导出同一组环境变量后执行 `./deploy-service`。原生运行默认监听 `127.0.0.1:8096`，默认数据库为工作目录下的 `data/deploy.db`，可通过 `LISTEN_ADDR` 和 `DEPLOY_DB` 覆盖。
 
 ## 从 blog-go 切换
 
 1. 先发布本仓库的 9 个工作流入口和 2 个共用工作流到 GitHub 默认分支 `main`。旧服务仍可以使用空 inputs 调用它们。
-2. 配好新服务的环境、GitLab token 和 GitHub 签名密钥。先构建服务。选在历史部署和卡片收尾均已结束时交接，旧服务的 Redis 中间状态不会迁入新数据库。
+2. 配好新服务的环境、GitLab token 和 GitHub 签名密钥。先拉取服务镜像。选在历史部署和卡片收尾均已结束时交接，旧服务的 Redis 中间状态不会迁入新数据库。
 3. 部署已移除 Skytek 路由和飞书长连接的 blog-go 构建，随后启动新服务。确保同一飞书应用只有新服务消费按钮事件。博客的构建 ID 和 SSE 接口继续走博客。
 4. 在现有 webhook 域名的 Nginx server 中加入下列 location。保留 `proxy_pass` 的写法以转发完整 URI。检查 `nginx -t` 成功后重载。如果 Nginx 在容器中，请将上游改为其网络可达的服务地址。
 
