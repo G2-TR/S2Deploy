@@ -1,7 +1,13 @@
 name: Build and Package
 
+run-name: ${{ inputs.deployment_id && format('deploy-{0}', inputs.deployment_id) || format('{0} · {1}', github.workflow, github.actor) }}
+
 on:
   workflow_dispatch:
+    inputs:
+      deployment_id:
+        description: Optional Feishu deployment identifier. Leave empty for manual runs.
+        type: string
 
 permissions:
   actions: write
@@ -9,111 +15,17 @@ permissions:
   pull-requests: write
   packages: write
 
+concurrency:
+  group: deploy-build
+  cancel-in-progress: false
 
 jobs:
   build:
-    runs-on:
-      - self-hosted
-      - macOS
-    
-    steps:
-      - name: Clone or pull from GitLab
-        run: |
-          if [ -d "source/.git" ]; then
-            echo "Cache found, pulling latest changes..."
-            cd source
-            git remote set-url origin ${{ secrets.MAIN_SERVER_REPO }}
-            git fetch --depth 1 origin master
-            git reset --hard FETCH_HEAD
-          else
-            echo "No cache found, cloning repository..."
-            git clone --depth 1 --branch master --single-branch ${{ secrets.MAIN_SERVER_REPO }} source
-          fi
-
-      - name: Add Homebrew to PATH
-        if: runner.os == 'macOS'
-        run: |
-          if [ -d /opt/homebrew/bin ]; then
-            echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
-          fi
-          if [ -d /usr/local/bin ]; then
-            echo "/usr/local/bin" >> "$GITHUB_PATH"
-          fi
-
-      - name: Setup SSH tooling
-        run: |
-          set -e
-          if ! command -v sshpass > /dev/null 2>&1; then
-            case "$(uname -s)" in
-              Linux)
-                if command -v apt-get > /dev/null 2>&1; then
-                  sudo apt-get update
-                  sudo apt-get install -y sshpass
-                else
-                  echo "sshpass is not installed and no supported Linux package manager was found."
-                  exit 1
-                fi
-                ;;
-              Darwin)
-                if ! command -v brew > /dev/null 2>&1; then
-                  echo "Homebrew is required to install sshpass on a macOS self-hosted runner."
-                  exit 1
-                fi
-                HOMEBREW_NO_AUTO_UPDATE=1 brew install hudochenkov/sshpass/sshpass
-                ;;
-              *)
-                echo "Unsupported runner OS: $(uname -s)"
-                exit 1
-                ;;
-            esac
-          fi
-          mkdir -p ~/.ssh
-          touch ~/.ssh/known_hosts
-          ssh-keyscan -p ${{ secrets.MAIN_SERVER_PORT }} ${{ secrets.MAIN_SERVER_HOST }} >> ~/.ssh/known_hosts
-
-      - name: Backup existing Work directory on server
-        run: |
-          TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-          BACKUP_DIR="/storage/sites/G2/Page/Work_backup_$TIMESTAMP"
-          sshpass -p "${{ secrets.SSH_PASSWORD }}" ssh -p ${{ secrets.MAIN_SERVER_PORT }} root@${{ secrets.MAIN_SERVER_HOST }} "if [ -d '/storage/sites/G2/Page/Work' ]; then cp -r '/storage/sites/G2/Page/Work' '$BACKUP_DIR' && echo 'Backup created: $BACKUP_DIR'; else echo 'No existing Work directory to backup'; fi"
-
-      - name: Set up Node.js 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install dependencies
-        working-directory: ./source
-        run: |
-          CURRENT_HASH=$(shasum -a 256 package.json | awk '{print $1}')
-          CACHED_HASH=$(cat .pkg_hash 2>/dev/null || echo "")
-          if [ "$CURRENT_HASH" != "$CACHED_HASH" ] || [ ! -d "node_modules" ]; then
-            echo "Dependencies changed or missing, running npm install..."
-            npm install --legacy-peer-deps
-            echo "$CURRENT_HASH" > .pkg_hash
-          else
-            echo "node_modules cache hit, skipping install."
-          fi
-
-      - name: Build project
-        working-directory: ./source
-        run: npm run build
-
-      - name: Create deployment package
-        working-directory: ./source
-        run: |
-          tar -czf Work.tar.gz Run/Work/
-          FILE_SIZE=$(du -h Work.tar.gz | cut -f1)
-          echo "Package created: Work.tar.gz ($FILE_SIZE)"
-
-      - name: Upload package to server
-        run: |
-          sshpass -p "${{ secrets.SSH_PASSWORD }}" scp -P ${{ secrets.MAIN_SERVER_PORT }} source/Work.tar.gz root@${{ secrets.MAIN_SERVER_HOST }}:/storage/sites/G2/Page/
-
-      - name: Extract package on server
-        run: |
-          sshpass -p "${{ secrets.SSH_PASSWORD }}" ssh -p ${{ secrets.MAIN_SERVER_PORT }} root@${{ secrets.MAIN_SERVER_HOST }} "cd /storage/sites/G2/Page && rm -rf Work && tar -xzf Work.tar.gz --strip-components=1 && rm -f Work.tar.gz && echo 'Deployment completed successfully'"
-
-      - name: Verify deployment
-        run: |
-          sshpass -p "${{ secrets.SSH_PASSWORD }}" ssh -p ${{ secrets.MAIN_SERVER_PORT }} root@${{ secrets.MAIN_SERVER_HOST }} "if [ -d '/storage/sites/G2/Page/Work' ]; then echo 'Deployment verified: Work directory exists'; ls -la '/storage/sites/G2/Page/Work' | head -10; else echo 'ERROR: Work directory not found after deployment'; exit 1; fi"
+    uses: ./.github/workflows/deploy-work-frontend.yml
+    with:
+      demo: false
+    secrets:
+      MAIN_SERVER_REPO: ${{ secrets.MAIN_SERVER_REPO }}
+      MAIN_SERVER_HOST: ${{ secrets.MAIN_SERVER_HOST }}
+      MAIN_SERVER_PORT: ${{ secrets.MAIN_SERVER_PORT }}
+      SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
