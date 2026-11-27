@@ -215,12 +215,7 @@ func (s *service) resultCard(ctx context.Context, d deployment, t target) error 
 			return err
 		}
 	}
-	if t.Group == "g2" && !d.WorkCopySent {
-		if err := s.cards.send(ctx, "work", d.ResultCardID, shortID(d.ID+":result:work")); err != nil {
-			return err
-		}
-		return s.change(d.ID, func(v *deployment) error { v.WorkCopySent = true; return nil })
-	}
+
 	return nil
 }
 

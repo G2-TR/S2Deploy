@@ -239,13 +239,8 @@ func TestManualG2ResultReplays(t *testing.T) {
 			requireOK(t, s.process(t.Context(), d))
 		}
 	}
-	if len(cards.sends) != 2 || len(cards.seq) != 0 {
-		t.Fatalf("expected one result per group, got %+v", cards)
-	}
-	for _, n := range cards.sends {
-		if n != 1 {
-			t.Fatal("duplicate result")
-		}
+	if len(cards.sends) != 1 || cards.sends["g2/"+shortID("run-90-2:result:g2")] != 1 || len(cards.seq) != 0 {
+		t.Fatalf("expected a single backend result in the G2 chat, got %+v", cards.sends)
 	}
 }
 
@@ -329,7 +324,7 @@ func TestG2unPush(t *testing.T) {
 		req.Header.Set("X-Gitlab-Event", "Push Hook")
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, req)
-		if w.Code != 204 || (cards.sends["g2/"] == 1) != tc.sent {
+		if w.Code != 204 || (cards.sends["work/"] == 1) != tc.sent || cards.sends["g2/"] != 0 {
 			t.Fatalf("%+v: %d %+v", tc, w.Code, cards)
 		}
 		if tc.sent && (cards.template != notifyTemplate[g2un] || cards.vars["deploy_disable"] != tc.disabled || cards.vars["commit_message"] != "latest") {
@@ -343,15 +338,16 @@ func TestG2unButton(t *testing.T) {
 	defer db.db.Close()
 	s := service{store: db, wake: make(chan struct{}, 1)}
 	for i, tc := range []struct{ kind, name, branch, chat, want string }{
-		{"G2Vue3", g2un, g2Ref, "g2-chat", "error"},
-		{"G2Vue3", g2un, masterRef, "work-chat", "error"},
-		{"G2Vue3", "chis", masterRef, "g2-chat", "error"},
+		{"G2Vue3", g2un, g2Ref, "work-chat", "error"},
+		{"G2Vue3", g2un, masterRef, "g2-chat", "error"},
+		{"G2Vue3", "chis", masterRef, "work-chat", "error"},
+		{"", g2un, masterRef, "work-chat", "error"},
 		{"G2", "un", masterRef, "g2-chat", "error"},
-		{"G2Vue3", g2un, masterRef, "g2-chat", "success"},
+		{"G2Vue3", g2un, masterRef, "work-chat", "success"},
 	} {
 		id := fmt.Sprint(i)
 		var ev callback.CardActionTriggerEvent
-		raw := jsonString(map[string]any{"header": map[string]string{"event_id": id}, "event": map[string]any{"action": map[string]any{"value": map[string]string{"type": tc.kind, "service": tc.name, "branch": tc.branch}}, "context": map[string]string{"open_chat_id": tc.chat}}})
+		raw := jsonString(map[string]any{"header": map[string]string{"event_id": id}, "event": map[string]any{"action": map[string]any{"value": map[string]string{"type": tc.kind, "service": tc.name, "server": tc.name, "branch": tc.branch}}, "context": map[string]string{"open_chat_id": tc.chat}}})
 		requireOK(t, json.Unmarshal([]byte(raw), &ev))
 		res, err := s.button(map[string]string{"g2": "g2-chat", "work": "work-chat"})(t.Context(), &ev)
 		requireOK(t, err)
@@ -365,5 +361,27 @@ func TestG2unButton(t *testing.T) {
 	key, ok := workflowTarget(".github/workflows/build-g2un.yml")
 	if !ok || key != g2un {
 		t.Fatal("workflow is not tracked")
+	}
+}
+
+func TestDeploymentCardDestinations(t *testing.T) {
+	for _, tc := range []struct{ target, group, result string }{
+		{g2un, "work", "success"},
+		{"work", "work", "failure"},
+		{"g2-chis", "g2", "success"},
+	} {
+		t.Run(tc.target, func(t *testing.T) {
+			cards := &fakeCards{}
+			s := &service{store: testStore(t, filepath.Join(t.TempDir(), "state.db")), cards: cards}
+			defer s.db.Close()
+			const id = "test-run"
+			requireOK(t, s.request("click", id, tc.target))
+			requireOK(t, s.deliver(t.Context(), id, targets[tc.target]))
+			requireOK(t, s.change(id, func(d *deployment) error { d.Result = tc.result; return nil }))
+			requireOK(t, s.deliver(t.Context(), id, targets[tc.target]))
+			if len(cards.sends) != 2 || cards.sends[tc.group+"/"+id] != 1 || cards.sends[tc.group+"/"+shortID(id+":result:"+tc.group)] != 1 {
+				t.Fatalf("unexpected progress or result recipient: %v", cards.sends)
+			}
+		})
 	}
 }

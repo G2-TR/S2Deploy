@@ -115,6 +115,8 @@ func (s *service) button(chats map[string]string) func(context.Context, *callbac
 			}
 			key = g2un
 			group = targets[g2un].Group
+		} else if key == g2un {
+			return toast("部署卡片类型不匹配", "error"), nil
 		}
 		t, ok := targets[key]
 		if !ok || t.Group != group || e.Event.Context.OpenChatID != chats[t.Group] || values["branch"] != branch {

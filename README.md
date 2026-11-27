@@ -34,7 +34,7 @@ cp -n .env.example .env
 | `GITHUB_WEBHOOK_SECRET` | 与 GitHub 仓库 Webhook 配置相同的签名密钥，订阅 Workflow runs，使用 JSON |
 | `GITLAB_WEBHOOK_TOKEN` | 在历史 Work 和 G2 的 GitLab Push webhook 设置相同的 Secret token |
 | `FEISHU_APP_ID`、`FEISHU_APP_SECRET` | 原飞书应用的身份凭据。切换时轮换原本写入博客代码的密钥 |
-| `FEISHU_WORK_CHAT_ID`、`FEISHU_G2_CHAT_ID` | Work 群、G2 群的 chat ID，按钮处理会校验来源群和分支 |
+| `FEISHU_WORK_CHAT_ID`、`FEISHU_G2_CHAT_ID` | 前端部署群（S2Work、G2un.work）和 G2 后端部署群的 chat ID，按钮处理会校验来源群和分支 |
 | `FEISHU_VERIFICATION_TOKEN` | 使用原 `LarkWebhook` HTTP 验证地址时填写。部署按钮使用飞书长连接 |
 
 ```sh
@@ -64,7 +64,7 @@ docker compose logs --tail=80 deploy-service
    }
    ```
 
-5. GitLab 推送沿用 `POST /api/skytek/GitlabWebhook` 和 `POST /api/skytek/GitlabWebhookG2`；GitHub 沿用 `POST /api/skytek/WorkflowWebhook`。先检查一次 webhook delivery，再从 81 群卡片点一次部署，核对 Actions 运行标题、进度卡链接和结果卡。G2 进度发到 G2 群，结果发到 G2 群与 Work 群。手动运行也会在收到完成事件后发送结果卡。
+5. GitLab 推送沿用 `POST /api/skytek/GitlabWebhook` 和 `POST /api/skytek/GitlabWebhookG2`；GitHub 沿用 `POST /api/skytek/WorkflowWebhook`。先检查一次 webhook delivery，再从 81 群卡片点一次部署，核对 Actions 运行标题、进度卡链接和结果卡。每个部署目标的推送、进度和结果都只发到该目标所属的群。手动运行也会在收到完成事件后发送结果卡。
 
 如需回切，先等待新服务中的部署和卡片收尾完成，停止新服务，再将上游切回旧博客版本并恢复其飞书连接。若已轮换飞书凭据，回切版本必须使用有效凭据。
 
@@ -86,10 +86,10 @@ docker compose up -d
 
 ## 本地验证
 
-进入 `service/` 执行 `go test -race ./...`。测试使用临时状态库、模拟 GitHub HTTP 端点和飞书卡片，覆盖并发点击、响应丢失、签名回调、卡片更新失败后重启恢复以及手动运行的双群结果通知。
+进入 `service/` 执行 `go test -race ./...`。测试使用临时状态库、模拟 GitHub HTTP 端点和飞书卡片，覆盖并发点击、响应丢失、签名回调、卡片更新失败后重启恢复以及手动运行的结果通知和前后端群隔离。
 
 ### G2un.work H5
 
 - 发布飞书模板「G2un.work 推送」并授权给部署机器人。在 GitLab 的 G2un.work 项目添加 Push events webhook，地址为部署服务的 `/api/skytek/GitlabWebhookVue3`，Secret token 使用现有 `GITLAB_WEBHOOK_TOKEN`。
 - 在工作流仓库添加只读克隆地址 Secret `G2UN_REPO`，以及站点变量 `G2UN_SITE_URL`（格式为 `https://站点域名/G2un/`）。SSH 使用 81 环境已有的 `MAIN_SERVER_HOST`、`MAIN_SERVER_PORT`、`SSH_PASSWORD`。
-- 推送卡发往 G2 群。只有 master 的卡片可部署，点击后拉取 GitLab master 最新代码，实际构建的 SHA 记录在 Actions 摘要。工作流更新 `/storage/sites/G2/Page/G2un/` 并保留现有的 `static/config.js`。入口、业务深链、入口 JS 和配置文件通过 HTTP 内容核验后才报告成功。核验失败会恢复上一版。每次更新的上一版位于 Actions 日志中的 `previous` 路径。
+- 推送、进度和结果卡都发往 S2Work 使用的前端群。只有 master 的卡片可部署，点击后拉取 GitLab master 最新代码，实际构建的 SHA 记录在 Actions 摘要。工作流更新 `/storage/sites/G2/Page/G2un/` 并保留现有的 `static/config.js`。入口、业务深链、入口 JS 和配置文件通过 HTTP 内容核验后才报告成功。核验失败会恢复上一版。每次更新的上一版位于 Actions 日志中的 `previous` 路径。

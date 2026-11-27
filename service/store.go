@@ -16,7 +16,7 @@ const masterRef = "refs/heads/master"
 const g2Ref = "refs/heads/prod-merge"
 
 var targets = map[string]target{
-	g2un:      {"build-g2un.yml", "G2un.work 部署", "g2"},
+	g2un:      {"build-g2un.yml", "G2un.work 部署", "work"},
 	"main":    {"build.yml", "81环境", "work"},
 	"demo":    {"build-demo.yml", "演示环境", "work"},
 	"work":    {"build-work.yml", "90环境", "work"},
@@ -45,7 +45,6 @@ type deployment struct {
 
 	ResultCardID string
 	ResultSent   bool
-	WorkCopySent bool
 }
 
 type store struct{ db *bolt.DB }
