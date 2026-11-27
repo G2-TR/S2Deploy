@@ -12,7 +12,7 @@ import (
 type cards interface {
 	create(context.Context, string, map[string]any) (string, error)
 	send(context.Context, string, string, string) error
-	patch(context.Context, string, int, string) error
+	updateProgress(context.Context, string, int, string, string) error
 }
 type service struct {
 	*store
@@ -148,9 +148,10 @@ func (s *service) progressCard(ctx context.Context, d deployment, t target) erro
 	if d.Result != "" {
 		message = fmt.Sprintf("**%s** · %s", t.Name, resultText(d.Result))
 	}
-	message += "\n[查看工作流](" + link + ")"
+	workflowLink := "[查看工作流](" + link + ")"
+	delivered := message + "\n" + workflowLink
 	if d.CardID == "" {
-		card, e := s.cards.create(ctx, "AAqXqlNu4g67k", map[string]any{"server": t.Name, "workflow_url": map[string]string{"url": link}, "deploy_process_text": message})
+		card, e := s.cards.create(ctx, "AAqXqlNu4g67k", map[string]any{"server": t.Name, "workflow_url": map[string]string{"url": link}, "deploy_process_text": message, "workflow": workflowLink})
 		if e != nil {
 			return e
 		}
@@ -167,17 +168,17 @@ func (s *service) progressCard(ctx context.Context, d deployment, t target) erro
 			return e
 		}
 	}
-	if d.Delivered == message {
+	if d.Delivered == delivered {
 		return nil
 	}
 	// Reserve the sequence before calling Feishu so a restarted worker always advances it.
 	if err := s.change(id, func(v *deployment) error { v.Sequence++; d.Sequence = v.Sequence; return nil }); err != nil {
 		return err
 	}
-	if err := s.cards.patch(ctx, d.CardID, d.Sequence, message); err != nil {
+	if err := s.cards.updateProgress(ctx, d.CardID, d.Sequence, message, workflowLink); err != nil {
 		return err
 	}
-	return s.change(id, func(v *deployment) error { v.Delivered = message; return nil })
+	return s.change(id, func(v *deployment) error { v.Delivered = delivered; return nil })
 }
 
 func (s *service) resultCard(ctx context.Context, d deployment, t target) error {

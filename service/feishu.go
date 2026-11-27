@@ -62,14 +62,26 @@ func (f feishu) send(ctx context.Context, group, card, id string) error {
 	return nil
 }
 
-func (f feishu) patch(ctx context.Context, card string, seq int, text string) error {
-	body := cardkit.NewPatchCardElementReqBodyBuilder().PartialElement(jsonString(map[string]string{"content": text})).Sequence(seq).Build()
-	r, e := f.client.Cardkit.V1.CardElement.Patch(ctx, cardkit.NewPatchCardElementReqBuilder().CardId(card).ElementId("stream_update_sect").Body(body).Build())
+func (f feishu) updateProgress(ctx context.Context, card string, seq int, text, link string) error {
+	const id = "stream_update_sect"
+	// Replace both lines together, including on cards created with the old single-text element.
+	element := map[string]any{
+		"tag": "column_set", "element_id": id, "flex_mode": "none",
+		"columns": []map[string]any{{
+			"tag": "column", "width": "weighted", "weight": 1, "padding": "0px", "vertical_spacing": "0px",
+			"elements": []map[string]string{
+				{"tag": "markdown", "content": text, "text_size": "normal"},
+				{"tag": "markdown", "content": link, "text_size": "notation"},
+			},
+		}},
+	}
+	body := cardkit.NewUpdateCardElementReqBodyBuilder().Element(jsonString(element)).Sequence(seq).Build()
+	r, e := f.client.Cardkit.V1.CardElement.Update(ctx, cardkit.NewUpdateCardElementReqBuilder().CardId(card).ElementId(id).Body(body).Build())
 	if e != nil {
 		return e
 	}
 	if !r.Success() {
-		return fmt.Errorf("Feishu patch: code %d", r.Code)
+		return fmt.Errorf("Feishu update progress: code %d", r.Code)
 	}
 	return nil
 }

@@ -20,9 +20,10 @@ import (
 )
 
 type fakeCards struct {
-	sends     map[string]int
-	seq       []int
-	failFinal bool
+	sends                      map[string]int
+	seq                        []int
+	progressText, workflowLink string
+	failFinal                  bool
 }
 
 func (f *fakeCards) create(_ context.Context, tmpl string, vars map[string]any) (string, error) {
@@ -35,7 +36,8 @@ func (f *fakeCards) send(_ context.Context, group, card, id string) error {
 	f.sends[group+"/"+id]++
 	return nil
 }
-func (f *fakeCards) patch(_ context.Context, _ string, seq int, body string) error {
+func (f *fakeCards) updateProgress(_ context.Context, _ string, seq int, body, link string) error {
+	f.progressText, f.workflowLink = body, link
 	f.seq = append(f.seq, seq)
 	if f.failFinal && strings.Contains(body, "部署成功") {
 		return errors.New("card patch unavailable")
@@ -177,6 +179,24 @@ func TestDispatchWebhookAndCardRecovery(t *testing.T) {
 		if n != 1 {
 			t.Fatal("duplicate notification")
 		}
+	}
+}
+
+func TestProgressLinkTracksRunWithoutChangingText(t *testing.T) {
+	cards := &fakeCards{}
+	s := &service{store: testStore(t, filepath.Join(t.TempDir(), "state.db")), cards: cards, repo: "org/deploy"}
+	defer s.db.Close()
+	const id = "pending-link"
+	requireOK(t, s.request("event", id, "main"))
+	requireOK(t, s.deliver(t.Context(), id, targets["main"]))
+	text := cards.progressText
+	if text == "" || strings.Contains(text, "查看工作流") || cards.workflowLink != "[查看工作流](https://github.com/org/deploy/actions/workflows/build.yml)" {
+		t.Fatalf("unexpected pending progress: %q %q", text, cards.workflowLink)
+	}
+	requireOK(t, s.change(id, func(d *deployment) error { d.RunID = 81; return nil }))
+	requireOK(t, s.deliver(t.Context(), id, targets["main"]))
+	if cards.progressText != text || cards.workflowLink != "[查看工作流](https://github.com/org/deploy/actions/runs/81)" || len(cards.seq) != 2 {
+		t.Fatalf("unexpected run progress: %q %q %v", cards.progressText, cards.workflowLink, cards.seq)
 	}
 }
 
