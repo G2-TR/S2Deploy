@@ -26,6 +26,7 @@ func (h hooks) routes() http.Handler {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 	mux.HandleFunc("POST /api/skytek/GitlabWebhook", h.push("work"))
 	mux.HandleFunc("POST /api/skytek/GitlabWebhookG2", h.push("g2"))
+	mux.HandleFunc("POST /api/skytek/GitlabWebhookVue3", h.push(g2un))
 	mux.HandleFunc("POST /api/skytek/WorkflowWebhook", h.workflow)
 	mux.HandleFunc("POST /api/skytek/LarkWebhook", h.challenge)
 	// Legacy CreateDeploy was a no-op, retain the endpoint for compatibility.
@@ -33,13 +34,17 @@ func (h hooks) routes() http.Handler {
 	return mux
 }
 
-func (h hooks) push(group string) http.HandlerFunc {
+func (h hooks) push(source string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !hmac.Equal([]byte(h.gitlabToken), []byte(r.Header.Get("X-Gitlab-Token"))) {
 			w.WriteHeader(401)
 			return
 		}
 		var p struct {
+			After   string
+			Project struct {
+				Path string `json:"path_with_namespace"`
+			}
 			Ref     string
 			User    string `json:"user_name"`
 			Commits []struct{ Message string }
@@ -52,11 +57,22 @@ func (h hooks) push(group string) http.HandlerFunc {
 		if len(p.Commits) > 0 {
 			msg = p.Commits[0].Message
 		}
-		card, e := h.s.cards.create(r.Context(), notifyTemplate[group], pushVars(p.Ref, msg, p.User, group))
+		group := source
+		if source == g2un {
+			if r.Header.Get("X-Gitlab-Event") != "Push Hook" || !strings.EqualFold(p.Project.Path, "vic/G2un.work") || !strings.HasPrefix(p.Ref, "refs/heads/") || strings.Trim(p.After, "0") == "" {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			group = targets[g2un].Group
+			if len(p.Commits) > 0 {
+				msg = p.Commits[len(p.Commits)-1].Message
+			}
+		}
+		card, e := h.s.cards.create(r.Context(), notifyTemplate[source], pushVars(p.Ref, msg, p.User, source))
 		if e == nil {
 			uuid := r.Header.Get("X-Gitlab-Event-UUID")
 			if uuid != "" {
-				uuid = shortID(group + ":" + uuid)
+				uuid = shortID(source + ":" + uuid)
 			}
 			e = h.s.cards.send(r.Context(), group, card, uuid)
 		}

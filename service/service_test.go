@@ -310,3 +310,60 @@ func TestPollingUsesOriginalAttempt(t *testing.T) {
 		t.Fatalf("wrong run attempt %+v", r)
 	}
 }
+
+func TestG2unPush(t *testing.T) {
+	for _, tc := range []struct {
+		project, ref, after string
+		sent, disabled      bool
+	}{
+		{"vic/G2un.work", masterRef, "abcd", true, false},
+		{"vic/G2un.work", "refs/heads/feature", "abcd", true, true},
+		{"vic/G2vw.work", masterRef, "abcd", false, false},
+		{"vic/G2un.work", masterRef, strings.Repeat("0", 40), false, false},
+	} {
+		cards := &pushRecorder{}
+		mux := (hooks{s: &service{cards: cards}, gitlabToken: "secret"}).routes()
+		body := jsonString(map[string]any{"project": map[string]string{"path_with_namespace": tc.project}, "ref": tc.ref, "after": tc.after, "commits": []map[string]string{{"message": "first"}, {"message": "latest"}}})
+		req := httptest.NewRequest("POST", "/api/skytek/GitlabWebhookVue3", strings.NewReader(body))
+		req.Header.Set("X-Gitlab-Token", "secret")
+		req.Header.Set("X-Gitlab-Event", "Push Hook")
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+		if w.Code != 204 || (cards.sends["g2/"] == 1) != tc.sent {
+			t.Fatalf("%+v: %d %+v", tc, w.Code, cards)
+		}
+		if tc.sent && (cards.template != notifyTemplate[g2un] || cards.vars["deploy_disable"] != tc.disabled || cards.vars["commit_message"] != "latest") {
+			t.Fatalf("unexpected card: %+v", cards)
+		}
+	}
+}
+
+func TestG2unButton(t *testing.T) {
+	db := testStore(t, filepath.Join(t.TempDir(), "state.db"))
+	defer db.db.Close()
+	s := service{store: db, wake: make(chan struct{}, 1)}
+	for i, tc := range []struct{ kind, name, branch, chat, want string }{
+		{"G2Vue3", g2un, g2Ref, "g2-chat", "error"},
+		{"G2Vue3", g2un, masterRef, "work-chat", "error"},
+		{"G2Vue3", "chis", masterRef, "g2-chat", "error"},
+		{"G2", "un", masterRef, "g2-chat", "error"},
+		{"G2Vue3", g2un, masterRef, "g2-chat", "success"},
+	} {
+		id := fmt.Sprint(i)
+		var ev callback.CardActionTriggerEvent
+		raw := jsonString(map[string]any{"header": map[string]string{"event_id": id}, "event": map[string]any{"action": map[string]any{"value": map[string]string{"type": tc.kind, "service": tc.name, "branch": tc.branch}}, "context": map[string]string{"open_chat_id": tc.chat}}})
+		requireOK(t, json.Unmarshal([]byte(raw), &ev))
+		res, err := s.button(map[string]string{"g2": "g2-chat", "work": "work-chat"})(t.Context(), &ev)
+		requireOK(t, err)
+		if res.Toast.Type != tc.want {
+			t.Fatalf("%+v: %+v", tc, res.Toast)
+		}
+		if tc.want == "success" && record(t, db, shortID(id)).Target != g2un {
+			t.Fatal("wrong deployment target")
+		}
+	}
+	key, ok := workflowTarget(".github/workflows/build-g2un.yml")
+	if !ok || key != g2un {
+		t.Fatal("workflow is not tracked")
+	}
+}

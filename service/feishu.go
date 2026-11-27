@@ -15,7 +15,7 @@ import (
 	im "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 )
 
-var notifyTemplate = map[string]string{"work": "AAqXqP6SMSpxU", "g2": "AAqemMDkkGeNV"}
+var notifyTemplate = map[string]string{g2un: "AAqpdGrKsZR7C", "work": "AAqXqP6SMSpxU", "g2": "AAqemMDkkGeNV"}
 
 type feishu struct {
 	client *lark.Client
@@ -97,7 +97,7 @@ func (s *service) button(chats map[string]string) func(context.Context, *callbac
 		}
 		values := e.Event.Action.Value
 		key, _ := values["server"].(string)
-		branch := "refs/heads/master"
+		branch := masterRef
 		group := "work"
 		kind, _ := values["type"].(string)
 		if kind == "G2" {
@@ -108,7 +108,13 @@ func (s *service) button(chats map[string]string) func(context.Context, *callbac
 				name = "chis"
 			}
 			key = "g2-" + name
-			branch = "refs/heads/prod-merge"
+			branch = g2Ref
+		} else if kind == "G2Vue3" {
+			if values["service"] != g2un {
+				return toast("未知的前端部署目标", "error"), nil
+			}
+			key = g2un
+			group = targets[g2un].Group
 		}
 		t, ok := targets[key]
 		if !ok || t.Group != group || e.Event.Context.OpenChatID != chats[t.Group] || values["branch"] != branch {
@@ -126,10 +132,10 @@ func (s *service) button(chats map[string]string) func(context.Context, *callbac
 	}
 }
 
-func pushVars(ref, message, user, group string) map[string]any {
-	allowed := "refs/heads/master"
-	if group == "g2" {
-		allowed = "refs/heads/prod-merge"
+func pushVars(ref, message, user, source string) map[string]any {
+	allowed := masterRef
+	if source == "g2" {
+		allowed = g2Ref
 	}
 	return map[string]any{"commit_message": message, "user": user, "branch": ref, "time": time.Now().Format("2006-01-02 15:04:05"), "deploy_disable": ref != allowed}
 }

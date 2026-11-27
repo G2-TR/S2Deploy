@@ -1,0 +1,82 @@
+name: Deploy G2un.work H5
+run-name: ${{ inputs.deployment_id && format('deploy-{0}', inputs.deployment_id) || format('{0} · {1}', github.workflow, github.actor) }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      deployment_id:
+        description: Optional Feishu deployment identifier
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-g2un
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, macOS]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.14.1'
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '10.33.0'
+
+      - name: Build latest GitLab master
+        shell: bash
+        env:
+          SOURCE_REPO: ${{ secrets.G2UN_REPO }}
+        run: |
+          set -euo pipefail
+          : "${SOURCE_REPO:?Missing G2UN_REPO}"
+          build=$(mktemp -d "$RUNNER_TEMP/g2un.XXXXXXXX")
+          echo "G2UN_BUILD=$build" >> "$GITHUB_ENV"
+          git clone -q --depth 1 --single-branch --branch master "$SOURCE_REPO" "$build/source"
+          cd "$build/source"
+          git remote remove origin
+          echo "GitLab master: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+          pnpm install --frozen-lockfile
+          pnpm run build:h5
+          cd dist/build/h5
+          test -s index.html && test -s static/config.js
+          tar -czf "$build/h5.tgz" index.html assets static
+
+      - name: Publish and verify H5
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.MAIN_SERVER_HOST }}
+          DEPLOY_PORT: ${{ secrets.MAIN_SERVER_PORT }}
+          SSHPASS: ${{ secrets.SSH_PASSWORD }}
+          SITE_URL: ${{ vars.G2UN_SITE_URL }}
+        run: |
+          set -euo pipefail
+          : "${SITE_URL:?Set G2UN_SITE_URL to the HTTPS G2un base URL}"
+          [[ "${SITE_URL%/}" =~ ^https://[A-Za-z0-9.:-]+/G2un$ ]]
+          export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+          command -v sshpass >/dev/null || HOMEBREW_NO_AUTO_UPDATE=1 brew install hudochenkov/sshpass/sshpass
+          target="root@$DEPLOY_HOST"
+          ssh_opts=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=10)
+          remote=(sshpass -e ssh "${ssh_opts[@]}" -p "$DEPLOY_PORT" "$target")
+          package=$("${remote[@]}" 'mktemp /tmp/g2un.XXXXXXXX')
+          [[ "$package" =~ ^/tmp/g2un\.[a-zA-Z0-9]+$ ]]
+          trap '"${remote[@]}" "rm -f -- $package"' EXIT
+          sshpass -e scp "${ssh_opts[@]}" -P "$DEPLOY_PORT" "$G2UN_BUILD/h5.tgz" "$target:$package"
+          "${remote[@]}" "bash -s -- /storage/sites/G2 '$package' '${SITE_URL%/}'" < .github/scripts/publish-g2un.sh
+
+      - name: Clean temporary build
+        if: always()
+        shell: bash
+        run: |
+          if [[ -n "${G2UN_BUILD:-}" && "$G2UN_BUILD" == "$RUNNER_TEMP"/g2un.* ]]; then
+            rm -rf -- "$G2UN_BUILD"
+          fi

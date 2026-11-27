@@ -87,3 +87,9 @@ docker compose up -d
 ## 本地验证
 
 进入 `service/` 执行 `go test -race ./...`。测试使用临时状态库、模拟 GitHub HTTP 端点和飞书卡片，覆盖并发点击、响应丢失、签名回调、卡片更新失败后重启恢复以及手动运行的双群结果通知。
+
+### G2un.work H5
+
+- 发布飞书模板「G2un.work 推送」并授权给部署机器人。在 GitLab 的 G2un.work 项目添加 Push events webhook，地址为部署服务的 `/api/skytek/GitlabWebhookVue3`，Secret token 使用现有 `GITLAB_WEBHOOK_TOKEN`。
+- 在工作流仓库添加只读克隆地址 Secret `G2UN_REPO`，以及站点变量 `G2UN_SITE_URL`（格式为 `https://站点域名/G2un/`）。SSH 使用 81 环境已有的 `MAIN_SERVER_HOST`、`MAIN_SERVER_PORT`、`SSH_PASSWORD`。
+- 推送卡发往 G2 群。只有 master 的卡片可部署，点击后拉取 GitLab master 最新代码，实际构建的 SHA 记录在 Actions 摘要。工作流更新 `/storage/sites/G2/Page/G2un/` 并保留现有的 `static/config.js`。入口、业务深链、入口 JS 和配置文件通过 HTTP 内容核验后才报告成功。核验失败会恢复上一版。每次更新的上一版位于 Actions 日志中的 `previous` 路径。
