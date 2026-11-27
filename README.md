@@ -34,7 +34,7 @@ cp -n .env.example .env
 | `GITHUB_WEBHOOK_SECRET` | 与 GitHub 仓库 Webhook 配置相同的签名密钥，订阅 Workflow runs，使用 JSON |
 | `GITLAB_WEBHOOK_TOKEN` | 在历史 Work 和 G2 的 GitLab Push webhook 设置相同的 Secret token |
 | `FEISHU_APP_ID`、`FEISHU_APP_SECRET` | 原飞书应用的身份凭据。切换时轮换原本写入博客代码的密钥 |
-| `FEISHU_WORK_CHAT_ID`、`FEISHU_G2_CHAT_ID` | 前端部署群（S2Work、G2un.work）和 G2 后端部署群的 chat ID，按钮处理会校验来源群和分支 |
+| `FEISHU_WORK_CHAT_ID`、`FEISHU_G2_CHAT_ID` | 前端部署群（S2Work、G2un.work、G2vw.work）和 G2 后端部署群的 chat ID，按钮处理会校验来源群和分支 |
 | `FEISHU_VERIFICATION_TOKEN` | 使用原 `LarkWebhook` HTTP 验证地址时填写。部署按钮使用飞书长连接 |
 
 ```sh
@@ -93,3 +93,10 @@ docker compose up -d
 - 发布飞书模板「G2un.work 推送」并授权给部署机器人。在 GitLab 的 G2un.work 项目添加 Push events webhook，地址为部署服务的 `/api/skytek/GitlabWebhookVue3`，Secret token 使用现有 `GITLAB_WEBHOOK_TOKEN`。
 - 在工作流仓库添加只读克隆地址 Secret `G2UN_REPO`，以及站点变量 `G2UN_SITE_URL`（格式为 `https://站点域名/G2un/`）。SSH 使用 81 环境已有的 `MAIN_SERVER_HOST`、`MAIN_SERVER_PORT`、`SSH_PASSWORD`。
 - 推送、进度和结果卡都发往 S2Work 使用的前端群。只有 master 的卡片可部署，点击后拉取 GitLab master 最新代码，实际构建的 SHA 记录在 Actions 摘要。工作流更新 `/storage/sites/G2/Page/G2un/` 并保留现有的 `static/config.js`。入口、业务深链、入口 JS 和配置文件通过 HTTP 内容核验后才报告成功。核验失败会恢复上一版。每次更新的上一版位于 Actions 日志中的 `previous` 路径。
+
+### G2vw.work 多页面前端
+
+- 飞书使用「G2vw.work 推送」模板，推送、进度和结果均发往前端部署群。GitLab 项目 `vic/G2vw.work` 使用同一条 `/api/skytek/GitlabWebhookVue3` webhook 和 `GITLAB_WEBHOOK_TOKEN`，选择 Push events。只有 master 的卡片可点击部署。
+- 工作流仓库需要 Secret `G2VW_REPO`（可读取该 GitLab 项目的克隆地址）和 Variable `G2VW_SITE_URL`（HTTPS 站点根地址）。SSH 复用 81 环境的配置。
+- 点击部署后，自托管 Mac runner 拉取当时的 master，用项目的 `pnpm run build` 构建 `vite.build.json` 中的 Test 模块。前端 master 需要包含支持 `G2VW_RELEASE` 的 Vite 配置。每次 Actions 运行的 JS/CSS 独立存放在 `Page/script/g2vw/<运行号>-<尝试号>/` 和 `Page/assets/g2vw/<运行号>-<尝试号>/`，旧页面仍可加载原有资源。
+- 发布根目录为 `/storage/sites/G2/Page/`。脚本核验资源和站点已有的 `static/config.js`，只替换本次构建的 `module/<模块>/index.html`。脚本比对各入口及已知的 P002 深链响应。失败时恢复本次已切换的入口，上一版入口备份在 `/storage/sites/G2/g2vw-releases/build.*/previous/`。

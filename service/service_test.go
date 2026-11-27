@@ -306,15 +306,18 @@ func TestPollingUsesOriginalAttempt(t *testing.T) {
 	}
 }
 
-func TestG2unPush(t *testing.T) {
+func TestVue3Push(t *testing.T) {
 	for _, tc := range []struct {
 		project, ref, after string
-		sent, disabled      bool
+		templateKey         string
+		disabled            bool
 	}{
-		{"vic/G2un.work", masterRef, "abcd", true, false},
-		{"vic/G2un.work", "refs/heads/feature", "abcd", true, true},
-		{"vic/G2vw.work", masterRef, "abcd", false, false},
-		{"vic/G2un.work", masterRef, strings.Repeat("0", 40), false, false},
+		{"vic/G2un.work", masterRef, "abcd", g2un, false},
+		{"vic/G2un.work", "refs/heads/feature", "abcd", g2un, true},
+		{"vic/G2vw.work", masterRef, "abcd", g2vw, false},
+		{"vic/G2vw.work", "refs/heads/feature", "abcd", g2vw, true},
+		{"other/G2vw.work", masterRef, "abcd", "", false},
+		{"vic/G2un.work", masterRef, strings.Repeat("0", 40), "", false},
 	} {
 		cards := &pushRecorder{}
 		mux := (hooks{s: &service{cards: cards}, gitlabToken: "secret"}).routes()
@@ -324,16 +327,16 @@ func TestG2unPush(t *testing.T) {
 		req.Header.Set("X-Gitlab-Event", "Push Hook")
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, req)
-		if w.Code != 204 || (cards.sends["work/"] == 1) != tc.sent || cards.sends["g2/"] != 0 {
+		if w.Code != 204 || (cards.sends["work/"] == 1) != (tc.templateKey != "") || cards.sends["g2/"] != 0 {
 			t.Fatalf("%+v: %d %+v", tc, w.Code, cards)
 		}
-		if tc.sent && (cards.template != notifyTemplate[g2un] || cards.vars["deploy_disable"] != tc.disabled || cards.vars["commit_message"] != "latest") {
+		if tc.templateKey != "" && (cards.template != notifyTemplate[tc.templateKey] || cards.vars["deploy_disable"] != tc.disabled || cards.vars["commit_message"] != "latest") {
 			t.Fatalf("unexpected card: %+v", cards)
 		}
 	}
 }
 
-func TestG2unButton(t *testing.T) {
+func TestVue3Button(t *testing.T) {
 	db := testStore(t, filepath.Join(t.TempDir(), "state.db"))
 	defer db.db.Close()
 	s := service{store: db, wake: make(chan struct{}, 1)}
@@ -344,6 +347,10 @@ func TestG2unButton(t *testing.T) {
 		{"", g2un, masterRef, "work-chat", "error"},
 		{"G2", "un", masterRef, "g2-chat", "error"},
 		{"G2Vue3", g2un, masterRef, "work-chat", "success"},
+		{"G2Vue3", g2vw, masterRef, "work-chat", "success"},
+		{"G2Vue3", g2vw, g2Ref, "work-chat", "error"},
+		{"G2Vue3", g2vw, masterRef, "g2-chat", "error"},
+		{"", g2vw, masterRef, "work-chat", "error"},
 	} {
 		id := fmt.Sprint(i)
 		var ev callback.CardActionTriggerEvent
@@ -354,19 +361,23 @@ func TestG2unButton(t *testing.T) {
 		if res.Toast.Type != tc.want {
 			t.Fatalf("%+v: %+v", tc, res.Toast)
 		}
-		if tc.want == "success" && record(t, db, shortID(id)).Target != g2un {
+		if tc.want == "success" && record(t, db, shortID(id)).Target != tc.name {
 			t.Fatal("wrong deployment target")
 		}
 	}
-	key, ok := workflowTarget(".github/workflows/build-g2un.yml")
-	if !ok || key != g2un {
-		t.Fatal("workflow is not tracked")
+	for _, name := range []string{g2un, g2vw} {
+		key, ok := workflowTarget(".github/workflows/build-" + name + ".yml")
+		if !ok || key != name {
+			t.Fatal("workflow is not tracked:", name)
+		}
 	}
 }
 
 func TestDeploymentCardDestinations(t *testing.T) {
 	for _, tc := range []struct{ target, group, result string }{
 		{g2un, "work", "success"},
+		{g2vw, "work", "success"},
+		{g2vw, "work", "failure"},
 		{"work", "work", "failure"},
 		{"g2-chis", "g2", "success"},
 	} {

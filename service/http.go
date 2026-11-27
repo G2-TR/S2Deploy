@@ -26,7 +26,7 @@ func (h hooks) routes() http.Handler {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 	mux.HandleFunc("POST /api/skytek/GitlabWebhook", h.push("work"))
 	mux.HandleFunc("POST /api/skytek/GitlabWebhookG2", h.push("g2"))
-	mux.HandleFunc("POST /api/skytek/GitlabWebhookVue3", h.push(g2un))
+	mux.HandleFunc("POST /api/skytek/GitlabWebhookVue3", h.push("vue3"))
 	mux.HandleFunc("POST /api/skytek/WorkflowWebhook", h.workflow)
 	mux.HandleFunc("POST /api/skytek/LarkWebhook", h.challenge)
 	// Legacy CreateDeploy was a no-op, retain the endpoint for compatibility.
@@ -34,7 +34,7 @@ func (h hooks) routes() http.Handler {
 	return mux
 }
 
-func (h hooks) push(source string) http.HandlerFunc {
+func (h hooks) push(route string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !hmac.Equal([]byte(h.gitlabToken), []byte(r.Header.Get("X-Gitlab-Token"))) {
 			w.WriteHeader(401)
@@ -57,13 +57,22 @@ func (h hooks) push(source string) http.HandlerFunc {
 		if len(p.Commits) > 0 {
 			msg = p.Commits[0].Message
 		}
-		group := source
-		if source == g2un {
-			if r.Header.Get("X-Gitlab-Event") != "Push Hook" || !strings.EqualFold(p.Project.Path, "vic/G2un.work") || !strings.HasPrefix(p.Ref, "refs/heads/") || strings.Trim(p.After, "0") == "" {
+		source, group := route, route
+		if route == "vue3" {
+			switch strings.ToLower(p.Project.Path) {
+			case "vic/g2un.work":
+				source = g2un
+			case "vic/g2vw.work":
+				source = g2vw
+			default:
 				w.WriteHeader(http.StatusNoContent)
 				return
 			}
-			group = targets[g2un].Group
+			if r.Header.Get("X-Gitlab-Event") != "Push Hook" || !strings.HasPrefix(p.Ref, "refs/heads/") || strings.Trim(p.After, "0") == "" {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			group = targets[source].Group
 			if len(p.Commits) > 0 {
 				msg = p.Commits[len(p.Commits)-1].Message
 			}

@@ -1,0 +1,28 @@
+name: Deploy G2vw.work modules
+run-name: ${{ inputs.deployment_id && format('deploy-{0}', inputs.deployment_id) || format('{0} · {1}', github.workflow, github.actor) }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      deployment_id:
+        description: Optional Feishu deployment identifier
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-g2vw
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/deploy-vue3.yml
+    with:
+      project: g2vw
+      site_url: ${{ vars.G2VW_SITE_URL }}
+    secrets:
+      source_repo: ${{ secrets.G2VW_REPO }}
+      deploy_host: ${{ secrets.MAIN_SERVER_HOST }}
+      deploy_port: ${{ secrets.MAIN_SERVER_PORT }}
+      ssh_password: ${{ secrets.SSH_PASSWORD }}

@@ -1,0 +1,102 @@
+name: Deploy Vue 3 frontend
+
+on:
+  workflow_call:
+    inputs:
+      project:
+        required: true
+        type: string
+      site_url:
+        required: true
+        type: string
+    secrets:
+      source_repo:
+        required: true
+      deploy_host:
+        required: true
+      deploy_port:
+        required: true
+      ssh_password:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, macOS]
+    timeout-minutes: 30
+    env:
+      PROJECT: ${{ inputs.project }}
+      SITE_URL: ${{ inputs.site_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.14.1'
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '10.33.0'
+
+      - name: Build latest GitLab master
+        shell: bash
+        env:
+          SOURCE_REPO: ${{ secrets.source_repo }}
+        run: |
+          set -euo pipefail
+          : "${SOURCE_REPO:?Missing GitLab clone URL}"
+          case "$PROJECT" in
+            g2un) [[ "${SITE_URL%/}" =~ ^https://[A-Za-z0-9.:-]+/G2un$ ]] ;;
+            g2vw) [[ "${SITE_URL%/}" =~ ^https://[A-Za-z0-9.:-]+$ ]] ;;
+            *) exit 1 ;;
+          esac
+          build=$(mktemp -d "$RUNNER_TEMP/vue3.XXXXXXXX")
+          echo "VUE_BUILD=$build" >> "$GITHUB_ENV"
+          git clone -q --depth 1 --single-branch --branch master "$SOURCE_REPO" "$build/source"
+          cd "$build/source"
+          git remote remove origin
+          echo "GitLab master: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+          pnpm install --frozen-lockfile
+          if [[ "$PROJECT" == g2un ]]; then
+            pnpm run build:h5
+            cd dist/build/h5
+            test -s index.html && test -s static/config.js
+            tar -czf "$build/site.tgz" index.html assets static
+          else
+            export G2VW_RELEASE="$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+            pnpm run build
+            node "$GITHUB_WORKSPACE/.github/scripts/check-g2vw-build.mjs"
+            cd dist
+            tar -czf "$build/site.tgz" module "script/g2vw/$G2VW_RELEASE" "assets/g2vw/$G2VW_RELEASE"
+          fi
+
+      - name: Publish and verify site
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.deploy_host }}
+          DEPLOY_PORT: ${{ secrets.deploy_port }}
+          SSHPASS: ${{ secrets.ssh_password }}
+        run: |
+          set -euo pipefail
+          export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+          command -v sshpass >/dev/null || HOMEBREW_NO_AUTO_UPDATE=1 brew install hudochenkov/sshpass/sshpass
+          target="root@$DEPLOY_HOST"
+          ssh_opts=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=10)
+          remote=(sshpass -e ssh "${ssh_opts[@]}" -p "$DEPLOY_PORT" "$target")
+          package=$("${remote[@]}" 'mktemp /tmp/vue3.XXXXXXXX')
+          [[ "$package" =~ ^/tmp/vue3\.[a-zA-Z0-9]+$ ]]
+          trap '"${remote[@]}" "rm -f -- $package"' EXIT
+          sshpass -e scp "${ssh_opts[@]}" -P "$DEPLOY_PORT" "$VUE_BUILD/site.tgz" "$target:$package"
+          "${remote[@]}" "bash -s -- /storage/sites/G2 '$package' '${SITE_URL%/}' '$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT'" < ".github/scripts/publish-$PROJECT.sh"
+
+      - name: Clean temporary build
+        if: always()
+        shell: bash
+        run: |
+          if [[ -n "${VUE_BUILD:-}" && "$VUE_BUILD" == "$RUNNER_TEMP"/vue3.* ]]; then
+            rm -rf -- "$VUE_BUILD"
+          fi

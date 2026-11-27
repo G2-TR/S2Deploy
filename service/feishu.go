@@ -15,7 +15,7 @@ import (
 	im "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 )
 
-var notifyTemplate = map[string]string{g2un: "AAqpdGrKsZR7C", "work": "AAqXqP6SMSpxU", "g2": "AAqemMDkkGeNV"}
+var notifyTemplate = map[string]string{g2vw: "AAqpdajRJdHDw", g2un: "AAqpdGrKsZR7C", "work": "AAqXqP6SMSpxU", "g2": "AAqemMDkkGeNV"}
 
 type feishu struct {
 	client *lark.Client
@@ -110,12 +110,12 @@ func (s *service) button(chats map[string]string) func(context.Context, *callbac
 			key = "g2-" + name
 			branch = g2Ref
 		} else if kind == "G2Vue3" {
-			if values["service"] != g2un {
+			key, _ = values["service"].(string)
+			if key != g2un && key != g2vw {
 				return toast("未知的前端部署目标", "error"), nil
 			}
-			key = g2un
-			group = targets[g2un].Group
-		} else if key == g2un {
+			group = targets[key].Group
+		} else if key == g2un || key == g2vw {
 			return toast("部署卡片类型不匹配", "error"), nil
 		}
 		t, ok := targets[key]

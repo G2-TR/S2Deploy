@@ -12,10 +12,12 @@ import (
 type target struct{ File, Name, Group string }
 
 const g2un = "g2un"
+const g2vw = "g2vw"
 const masterRef = "refs/heads/master"
 const g2Ref = "refs/heads/prod-merge"
 
 var targets = map[string]target{
+	g2vw:      {"build-g2vw.yml", "G2vw.work 部署", "work"},
 	g2un:      {"build-g2un.yml", "G2un.work 部署", "work"},
 	"main":    {"build.yml", "81环境", "work"},
 	"demo":    {"build-demo.yml", "演示环境", "work"},
