@@ -13,7 +13,7 @@
 
 ## 配置和启动
 
-服务镜像为 `ghcr.io/g2-tr/s2deploy`，支持 Linux amd64 和 arm64。推送 `v*` 版本标签会发布版本号、`latest` 和 `sha-<完整提交号>` 三个镜像标签。也可以在 GitHub Actions 的 **Publish deploy service image** 工作流选择 `main` 手动发布 `latest` 和对应提交的镜像。
+服务镜像为 `ghcr.io/g2-tr/s2deploy`，仅发布 `linux/arm64`，适用于 M 系列 Mac 上的 Docker。推送 `v*` 版本标签会发布版本号、`latest` 和 `sha-<完整提交号>` 三个镜像标签。也可以在 GitHub Actions 的 **Publish deploy service image** 工作流选择 `main` 手动发布 `latest` 和对应提交的镜像。
 
 在服务器上选一个固定目录保存 Compose 文件和凭据。以下命令用于首次安装，假设 Docker 与 Nginx 在同一台宿主机。
 
